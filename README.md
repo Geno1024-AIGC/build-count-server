@@ -12,6 +12,15 @@ It is a breaking rewrite of the 7-year-old version: the old `GET /{project}` bot
 displayed and incremented the counter. Here **GET is always read-only** and
 **POST records a build**; no old data is migrated, counters start at zero.
 
+## Runtime
+
+- **Java 8 or newer.** The classes are compiled for Java 8, so the same `out/main`
+  runs on 8/11/17/21.
+- Building needs a JDK (8+). If the server only has a JRE, run `./build.sh`
+  locally and copy `out/main` over.
+- Plain HTTP only. Put it on whatever port you like; there is no TLS termination
+  in this repo.
+
 ## API
 
 All paths are RESTful. `GET` is public and read-only; only `POST` needs a token.
@@ -40,20 +49,23 @@ All paths are RESTful. `GET` is public and read-only; only `POST` needs a token.
 Example:
 
 ```sh
-curl -X POST https://count.example.com/projects/qqfm/modules/app/builds \
+curl -X POST http://your-server:8080/projects/qqfm/modules/app/builds \
   -H "Authorization: Bearer $BUILD_COUNT_TOKEN"
 # 42
 
-curl https://count.example.com/projects/qqfm/modules/app/calendar
+curl http://your-server:8080/projects/qqfm/modules/app/calendar
 # {"2026-11-19":30}
 ```
+
+> The bearer token travels in plaintext over HTTP. Use it on a trusted network,
+> and restrict the port with a firewall / security group if possible.
 
 ## Configuration
 
 | Env var | Default | Meaning |
 |---|---|---|
 | `BUILD_COUNT_TOKEN` | *(required)* | Shared bearer token for all `POST`s; server exits if unset |
-| `BIND` | `127.0.0.1` | Listen address; put a TLS reverse proxy in front for public traffic |
+| `BIND` | `127.0.0.1` | Listen address; use `0.0.0.0` for direct public access |
 | `PORT` | `8080` | Listen port |
 | `DATA_DIR` | `data` | Directory holding one `.properties` file per project |
 
@@ -76,18 +88,39 @@ builds cannot lose an increment. Backup is just copying the data directory.
 
 ## Build, test, run
 
-Requires JDK 21+, no external dependencies or build tool.
+Requires JDK 8+, no external dependencies or build tool.
 
 ```sh
 ./test.sh                        # dependency-free self tests
-BUILD_COUNT_TOKEN=secret ./run.sh
+BUILD_COUNT_TOKEN=secret BIND=0.0.0.0 ./run.sh
 ```
 
 ## Deploy
 
-`deploy/build-count-server.service` and `deploy/Caddyfile.example` show a
-minimal setup: the JVM listens on loopback, Caddy terminates TLS and proxies.
-Keep the token in a root-owned `0600` `EnvironmentFile`, never in this repo.
+`deploy/build-count-server.service` is a minimal systemd unit: it binds
+`0.0.0.0:8080`, runs as `buildcount`, and reads the token from
+`/etc/build-count-server.env` (root-owned, `0600`, never in this repo).
+
+```sh
+sudo useradd --system --home /var/lib/build-count-server \
+  --shell /usr/sbin/nologin buildcount
+sudo install -d -o buildcount -g buildcount /var/lib/build-count-server
+sudo git clone git@github.com:Geno1024-AIGC/build-count-server.git /opt/build-count-server
+cd /opt/build-count-server && sudo ./build.sh
+
+echo "BUILD_COUNT_TOKEN=$(openssl rand -hex 32)" | sudo tee /etc/build-count-server.env
+sudo chmod 600 /etc/build-count-server.env
+
+sudo cp deploy/build-count-server.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now build-count-server
+```
+
+Open the port (example with ufw; ideally restrict the source):
+
+```sh
+sudo ufw allow from <trusted-ip> to any port 8080 proto tcp
+```
 
 The data directory is runtime state (`.gitignore` excludes `data/`); back it up
 separately. No migration tool exists for the old counter files.

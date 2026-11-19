@@ -8,6 +8,8 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,15 +42,20 @@ public final class ApiHandler implements HttpHandler {
 
         try {
             exchange.getResponseHeaders().set("Cache-Control", "no-store");
-            reply.headers().forEach((name, value) -> exchange.getResponseHeaders().set(name, value));
-            if (reply.contentType() != null) {
-                exchange.getResponseHeaders().set("Content-Type", reply.contentType());
+            for (Map.Entry<String, String> header : reply.headers.entrySet()) {
+                exchange.getResponseHeaders().set(header.getKey(), header.getValue());
             }
-            byte[] body = reply.body().getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(reply.status(), body.length == 0 ? -1 : body.length);
+            if (reply.contentType != null) {
+                exchange.getResponseHeaders().set("Content-Type", reply.contentType);
+            }
+            byte[] body = reply.body.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(reply.status, body.length == 0 ? -1 : body.length);
             if (body.length > 0) {
-                try (OutputStream out = exchange.getResponseBody()) {
+                OutputStream out = exchange.getResponseBody();
+                try {
                     out.write(body);
+                } finally {
+                    out.close();
                 }
             }
         } finally {
@@ -58,17 +65,17 @@ public final class ApiHandler implements HttpHandler {
 
     private Reply route(HttpExchange exchange) throws IOException {
         String[] raw = exchange.getRequestURI().getPath().split("/");
-        List<String> path = new ArrayList<>();
+        List<String> path = new ArrayList<String>();
         for (String part : raw) {
             if (!part.isEmpty()) path.add(part);
         }
 
-        if (path.equals(List.of("healthz"))) {
+        if (is(path, "healthz")) {
             requireMethod(exchange, "GET");
             return plain(200, "ok");
         }
 
-        if (path.equals(List.of("projects"))) {
+        if (is(path, "projects")) {
             requireMethod(exchange, "GET");
             return json(200, array(store.projects()));
         }
@@ -79,9 +86,9 @@ public final class ApiHandler implements HttpHandler {
             if (path.size() == 2) {
                 requireMethod(exchange, "GET");
                 if (!store.hasProject(project)) return error(404, "project not found");
-                Map<String, Object> body = new LinkedHashMap<>();
+                Map<String, Object> body = new LinkedHashMap<String, Object>();
                 body.put("name", project);
-                body.put("total", store.total(project));
+                body.put("total", Long.valueOf(store.total(project)));
                 return json(200, object(body));
             }
 
@@ -99,11 +106,12 @@ public final class ApiHandler implements HttpHandler {
 
             if (path.size() == 4 && path.get(2).equals("modules")) {
                 requireMethod(exchange, "GET");
-                Long total = store.moduleTotal(project, segment(path.get(3)));
+                String module = segment(path.get(3));
+                Long total = store.moduleTotal(project, module);
                 if (total == null) return error(404, "module not found");
-                Map<String, Object> body = new LinkedHashMap<>();
+                Map<String, Object> body = new LinkedHashMap<String, Object>();
                 body.put("project", project);
-                body.put("module", segment(path.get(3)));
+                body.put("module", module);
                 body.put("total", total);
                 return json(200, object(body));
             }
@@ -128,17 +136,20 @@ public final class ApiHandler implements HttpHandler {
     private void requireToken(HttpExchange exchange) {
         String header = exchange.getRequestHeaders().getFirst("Authorization");
         if (header == null || !header.startsWith("Bearer ")) {
-            throw new HttpError(error(401, "unauthorized", Map.of("WWW-Authenticate", "Bearer")));
+            throw new HttpError(error(401, "unauthorized",
+                    Collections.singletonMap("WWW-Authenticate", "Bearer")));
         }
         byte[] provided = header.substring("Bearer ".length()).getBytes(StandardCharsets.UTF_8);
         if (!MessageDigest.isEqual(provided, token)) {
-            throw new HttpError(error(401, "unauthorized", Map.of("WWW-Authenticate", "Bearer")));
+            throw new HttpError(error(401, "unauthorized",
+                    Collections.singletonMap("WWW-Authenticate", "Bearer")));
         }
     }
 
     private static void requireMethod(HttpExchange exchange, String expected) {
         if (!exchange.getRequestMethod().equals(expected)) {
-            throw new HttpError(error(405, "method not allowed", Map.of("Allow", expected)));
+            throw new HttpError(error(405, "method not allowed",
+                    Collections.singletonMap("Allow", expected)));
         }
     }
 
@@ -149,22 +160,40 @@ public final class ApiHandler implements HttpHandler {
         return value;
     }
 
-    private record Reply(int status, String body, String contentType, Map<String, String> headers) {}
+    private static boolean is(List<String> path, String... expected) {
+        return path.equals(Arrays.asList(expected));
+    }
+
+    private static final class Reply {
+        final int status;
+        final String body;
+        final String contentType;
+        final Map<String, String> headers;
+
+        Reply(int status, String body, String contentType, Map<String, String> headers) {
+            this.status = status;
+            this.body = body;
+            this.contentType = contentType;
+            this.headers = headers;
+        }
+    }
 
     private static Reply plain(int status, String body) {
-        return new Reply(status, body, "text/plain; charset=utf-8", Map.of());
+        return new Reply(status, body, "text/plain; charset=utf-8",
+                Collections.<String, String>emptyMap());
     }
 
     private static Reply json(int status, String body) {
-        return new Reply(status, body, "application/json; charset=utf-8", Map.of());
+        return new Reply(status, body, "application/json; charset=utf-8",
+                Collections.<String, String>emptyMap());
     }
 
     private static Reply error(int status, String message) {
-        return error(status, message, Map.of());
+        return error(status, message, Collections.<String, String>emptyMap());
     }
 
     private static Reply error(int status, String message, Map<String, String> headers) {
-        Map<String, String> body = new LinkedHashMap<>();
+        Map<String, Object> body = new LinkedHashMap<String, Object>();
         body.put("error", message);
         return new Reply(status, object(body), "application/json; charset=utf-8", headers);
     }
@@ -210,25 +239,30 @@ public final class ApiHandler implements HttpHandler {
         StringBuilder out = new StringBuilder("\"");
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);
-            switch (c) {
-                case '"' -> out.append("\\\"");
-                case '\\' -> out.append("\\\\");
-                case '\n' -> out.append("\\n");
-                case '\r' -> out.append("\\r");
-                case '\t' -> out.append("\\t");
-                default -> {
-                    if (c < 0x20) out.append(String.format("\\u%04x", (int) c));
-                    else out.append(c);
-                }
+            if (c == '"') {
+                out.append("\\\"");
+            } else if (c == '\\') {
+                out.append("\\\\");
+            } else if (c == '\n') {
+                out.append("\\n");
+            } else if (c == '\r') {
+                out.append("\\r");
+            } else if (c == '\t') {
+                out.append("\\t");
+            } else if (c < 0x20) {
+                out.append(String.format("\\u%04x", (int) c));
+            } else {
+                out.append(c);
             }
         }
         return out.append('"').toString();
     }
 
     private static final class HttpError extends RuntimeException {
-        private final Reply reply;
+        private static final long serialVersionUID = 1L;
+        final Reply reply;
 
-        private HttpError(Reply reply) {
+        HttpError(Reply reply) {
             this.reply = reply;
         }
     }

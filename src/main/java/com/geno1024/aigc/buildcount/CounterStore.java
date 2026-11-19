@@ -22,6 +22,7 @@ import java.util.Properties;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * One {@code .properties} file per project, holding three dimensions:
@@ -105,7 +106,7 @@ public final class CounterStore {
     public List<String> projects() throws IOException {
         List<String> names = new ArrayList<>();
         if (!Files.isDirectory(dataDir)) return names;
-        try (var stream = Files.list(dataDir)) {
+        try (Stream<Path> stream = Files.list(dataDir)) {
             stream.map(p -> p.getFileName().toString())
                     .filter(n -> n.endsWith(".properties"))
                     .map(n -> n.substring(0, n.length() - ".properties".length()))

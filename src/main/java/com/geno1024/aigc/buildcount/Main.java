@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpServer;
 
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -18,7 +19,7 @@ public final class Main {
 
         String host = env("BIND", "127.0.0.1");
         int port = Integer.parseInt(env("PORT", "8080"));
-        Path dataDir = Path.of(env("DATA_DIR", "data"));
+        Path dataDir = Paths.get(env("DATA_DIR", "data"));
 
         CounterStore store = new CounterStore(dataDir);
         HttpServer server = HttpServer.create(new InetSocketAddress(host, port), 0);
