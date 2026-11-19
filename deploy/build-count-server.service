@@ -1,0 +1,17 @@
+[Unit]
+Description=Build count HTTP server
+After=network.target
+
+[Service]
+Type=simple
+User=buildcount
+WorkingDirectory=/opt/build-count-server
+Environment=BIND=127.0.0.1
+Environment=PORT=8080
+Environment=DATA_DIR=/var/lib/build-count-server
+EnvironmentFile=/etc/build-count-server.env
+ExecStart=/usr/bin/java --add-modules jdk.httpserver -cp /opt/build-count-server/out/main com.geno1024.ai.buildcount.Main
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
