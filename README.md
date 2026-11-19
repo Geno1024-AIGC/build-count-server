@@ -92,7 +92,8 @@ Requires JDK 8+, no external dependencies or build tool.
 
 ```sh
 ./test.sh                        # dependency-free self tests
-BUILD_COUNT_TOKEN=secret BIND=0.0.0.0 ./run.sh
+./package.sh                     # builds out/build-count-server.jar
+BUILD_COUNT_TOKEN=secret BIND=0.0.0.0 java -jar out/build-count-server.jar
 ```
 
 ## Deploy
@@ -105,8 +106,11 @@ BUILD_COUNT_TOKEN=secret BIND=0.0.0.0 ./run.sh
 sudo useradd --system --home /var/lib/build-count-server \
   --shell /usr/sbin/nologin buildcount
 sudo install -d -o buildcount -g buildcount /var/lib/build-count-server
-sudo git clone git@github.com:Geno1024-AIGC/build-count-server.git /opt/build-count-server
-cd /opt/build-count-server && sudo ./build.sh
+sudo install -d /opt/build-count-server
+
+# build locally (or on the server if it has a JDK) and place the jar
+./package.sh
+sudo install -m 644 out/build-count-server.jar /opt/build-count-server/build-count-server.jar
 
 echo "BUILD_COUNT_TOKEN=$(openssl rand -hex 32)" | sudo tee /etc/build-count-server.env
 sudo chmod 600 /etc/build-count-server.env
@@ -114,6 +118,23 @@ sudo chmod 600 /etc/build-count-server.env
 sudo cp deploy/build-count-server.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now build-count-server
+```
+
+Directory and token:
+
+| Path | Purpose |
+|---|---|
+| `/opt/build-count-server/build-count-server.jar` | the runnable jar |
+| `/var/lib/build-count-server/` | `DATA_DIR`; one `<project>.properties` per project, owned by `buildcount` |
+| `/etc/build-count-server.env` | `BUILD_COUNT_TOKEN=...`; root-owned `0600`, read by systemd |
+
+The unit already sets `BIND=0.0.0.0`, `PORT=8080`, and
+`DATA_DIR=/var/lib/build-count-server`. To run by hand instead:
+
+```sh
+set -a; . /etc/build-count-server.env; set +a
+BIND=0.0.0.0 PORT=8080 DATA_DIR=/var/lib/build-count-server \
+  java -jar /opt/build-count-server/build-count-server.jar
 ```
 
 Open the port (example with ufw; ideally restrict the source):

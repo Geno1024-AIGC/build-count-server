@@ -10,7 +10,7 @@ Environment=BIND=0.0.0.0
 Environment=PORT=8080
 Environment=DATA_DIR=/var/lib/build-count-server
 EnvironmentFile=/etc/build-count-server.env
-ExecStart=/usr/bin/java -cp /opt/build-count-server/out/main com.geno1024.ai.buildcount.Main
+ExecStart=/usr/bin/java -jar /opt/build-count-server/build-count-server.jar
 Restart=on-failure
 NoNewPrivileges=true
 PrivateTmp=true
