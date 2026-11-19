@@ -2,11 +2,13 @@
 
 A tiny public HTTP service that counts builds per **project → module → day**.
 
-This service only owns the **count** side of the org's build-number convention
-(`RULES/VERSION.md`). It does not issue or parse `<major>.<minor>.<env>.<pack>.<sha8>`
-version stamps: consuming projects decide how to combine a count from here with
-their own base / sha. The service itself deliberately has no build stamp and no
-`dist.sh` — keep it small.
+This service owns the **`pack`** side of the org's build-number convention
+(`RULES/VERSION.md`): a packaging build POSTs here and uses the returned module
+total as `pack`. It does not handle `major.minor`, `env`, or `sha8`: consuming
+projects combine the count with their own Git-derived fields. The service itself
+deliberately has no five-part build stamp and no `dist.sh` — keep it small.
+
+Standard deployment: `http://build-count.invalid`.
 
 It is a breaking rewrite of the 7-year-old version: the old `GET /{project}` both
 displayed and incremented the counter. Here **GET is always read-only** and
