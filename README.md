@@ -8,7 +8,10 @@ total as `pack`. It does not handle `major.minor`, `env`, or `sha8`: consuming
 projects combine the count with their own Git-derived fields. The service itself
 deliberately has no five-part build stamp and no `dist.sh` — keep it small.
 
-Standard deployment: `http://build-count.invalid`.
+The deployment address is configuration, not documentation: it lives in the
+operator's environment (`BIND` / `PORT`) and in each consumer's
+`BUILD_COUNT_URL`. Do not commit it here — a public repository that names the
+endpoint is an invitation to inflate the counters.
 
 It is a breaking rewrite of the 7-year-old version: the old `GET /{project}` both
 displayed and incremented the counter. Here **GET is always read-only** and
